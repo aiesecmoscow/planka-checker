@@ -115,7 +115,9 @@ def _format_actions_report(report: ActionsReport) -> str:
     header = (
         f"<b>Planka {period} actions</b>\n"
         f"<i>Generated {generated}</i>\n"
-        f"Boards: {meta.boards_count} · Actions: {meta.actions_count}"
+        f"Boards: {meta.boards_count} · Actions: {meta.actions_count} · "
+        f"Overdue: {meta.overdue_count} · Burning: {meta.burning_count} · "
+        f"Forgotten: {meta.forgotten_count}"
     )
     sections: list[str] = [header]
     if not report.actions:

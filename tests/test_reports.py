@@ -206,9 +206,9 @@ async def test_get_actions_daily(patched_generator: PlankaReportGenerator) -> No
     assert isinstance(report, ActionsReport)
     assert report.metadata.period == "day"
     assert report.metadata.actions_count == 2
-    assert report.metadata.overdue_count == 0
-    assert report.metadata.burning_count == 0
-    assert report.metadata.forgotten_count == 0
+    assert report.metadata.overdue_count == 1
+    assert report.metadata.burning_count == 1
+    assert report.metadata.forgotten_count == 1
     assert {a.type for a in report.actions} == {"commentCard", "createCard"}
     assert all(a.board_id for a in report.actions)
     assert all(a.user_name for a in report.actions)

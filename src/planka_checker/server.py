@@ -47,10 +47,11 @@ async def get_weekly_report() -> dict:
 @mcp.tool(
     name="get_daily_actions",
     description=(
-        "Return only the card action changes (createCard, moveCard, "
+        "Return the card action changes (createCard, moveCard, "
         "commentCard, completeTask, addMemberToCard, etc.) from the last "
-        "24 hours across the configured boards. No overdue/burning/"
-        "forgotten analysis — this is a lightweight activity feed."
+        "24 hours across the configured boards. Lightweight activity feed "
+        "— card lists are not included, but metadata carries the real "
+        "overdue/burning/forgotten counts."
     ),
 )
 async def get_daily_actions() -> dict:
@@ -61,10 +62,11 @@ async def get_daily_actions() -> dict:
 @mcp.tool(
     name="get_weekly_actions",
     description=(
-        "Return only the card action changes (createCard, moveCard, "
+        "Return the card action changes (createCard, moveCard, "
         "commentCard, completeTask, addMemberToCard, etc.) from the last "
-        "7 days across the configured boards. No overdue/burning/forgotten "
-        "analysis — this is a lightweight activity feed."
+        "7 days across the configured boards. Lightweight activity feed "
+        "— card lists are not included, but metadata carries the real "
+        "overdue/burning/forgotten counts."
     ),
 )
 async def get_weekly_actions() -> dict:
