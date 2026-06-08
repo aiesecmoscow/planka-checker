@@ -92,7 +92,7 @@ class PlankaReportGenerator:
         burning = self._get_burning_cards(world)
         forgotten = self._get_forgotten_cards(world)
 
-        cards_count = sum(len(data.cards) for data in world.board_datas)
+        cards_count = sum(1 for _ in _iter_active_cards(world))
 
         return PlankaReport(
             metadata=ReportMetadata(
@@ -142,7 +142,7 @@ class PlankaReportGenerator:
         burning = self._get_burning_cards(world)
         forgotten = self._get_forgotten_cards(world)
 
-        cards_count = sum(len(data.cards) for data in world.board_datas)
+        cards_count = sum(1 for _ in _iter_active_cards(world))
 
         return ActionsReport(
             metadata=ReportMetadata(
@@ -165,7 +165,7 @@ class PlankaReportGenerator:
         self, world: _World, window_start: datetime
     ) -> list[ActionSummary]:
         recent_actions = _filter_actions_by_period(
-            _iter_actions(world), window_start
+            _iter_active_actions(world), window_start
         )
         action_summaries = [
             _to_action_summary(action, world) for action in recent_actions
@@ -186,11 +186,11 @@ class PlankaReportGenerator:
         return self._get_forgotten_cards(world)
 
     def _get_overdue_cards(self, world: _World) -> list[CardSummary]:
-        summaries = [_build_card_summary(card, world) for card in _iter_cards(world)]
+        summaries = [_build_card_summary(card, world) for card in _iter_active_cards(world)]
         return [s for s in summaries if _is_overdue(s)]
 
     def _get_burning_cards(self, world: _World) -> list[CardSummary]:
-        summaries = [_build_card_summary(card, world) for card in _iter_cards(world)]
+        summaries = [_build_card_summary(card, world) for card in _iter_active_cards(world)]
         threshold = _now() + timedelta(hours=self._settings.burning_hours)
         result: list[CardSummary] = []
         for summary in summaries:
@@ -202,7 +202,7 @@ class PlankaReportGenerator:
         return result
 
     def _get_forgotten_cards(self, world: _World) -> list[CardSummary]:
-        summaries = [_build_card_summary(card, world) for card in _iter_cards(world)]
+        summaries = [_build_card_summary(card, world) for card in _iter_active_cards(world)]
         threshold = _now() - timedelta(days=self._settings.forgotten_days)
         result: list[CardSummary] = []
         for summary in summaries:
@@ -258,9 +258,25 @@ def _iter_cards(world: _World) -> Iterable[PlankaCard]:
         yield from data.cards.values()
 
 
-def _iter_actions(world: _World) -> Iterable[PlankaAction]:
-    for actions in world.actions_by_card.values():
-        yield from actions
+def _iter_active_cards(world: _World) -> Iterable[PlankaCard]:
+    for data in world.board_datas:
+        for card in data.cards.values():
+            list_obj = data.lists.get(card.list_id)
+            if list_obj is not None and list_obj.is_active:
+                yield card
+
+
+def _iter_active_actions(world: _World) -> Iterable[PlankaAction]:
+    for data in world.board_datas:
+        active_list_ids = {
+            lid for lid, lst in data.lists.items() if lst.is_active
+        }
+        for card in data.cards.values():
+            if card.list_id not in active_list_ids:
+                continue
+            actions = world.actions_by_card.get(card.id, [])
+            if actions:
+                yield from actions
 
 
 def _filter_actions_by_period(

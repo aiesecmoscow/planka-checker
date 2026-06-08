@@ -72,10 +72,19 @@ class PlankaLabel:
 class PlankaList:
     id: int = 0
     name: str = ""
+    type: str = "active"
+
+    @property
+    def is_active(self) -> bool:
+        return self.type == "active"
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> "PlankaList":
-        return cls(id=_as_int(data.get("id")) or 0, name=_as_str(data.get("name")))
+        return cls(
+            id=_as_int(data.get("id")) or 0,
+            name=_as_str(data.get("name")),
+            type=_as_str(data.get("type"), default="active"),
+        )
 
 
 @dataclass(slots=True)
