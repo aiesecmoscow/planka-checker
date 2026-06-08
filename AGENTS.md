@@ -7,6 +7,144 @@ MCP server + CLI + library for Planka board activity reports.
 - **MCP server**: `planka-checker-mcp` (stdio) — 6 tools: `get_daily_report`, `get_weekly_report`, `get_overdue_cards`, `get_burning_cards`, `get_forgotten_cards`, `get_full_report`
 - **CLI**: `planka-checker {daily,weekly,overdue,burning,forgotten} [--pretty|--summarize]`
 
+## Running the MCP server with `uvx` (for AI agents / MCP clients)
+
+`planka-checker-mcp` is a registered console script in `pyproject.toml`
+(`[project.scripts] planka-checker-mcp = "planka_checker.server:run"`).
+It's not on PyPI yet, so the recommended way to launch it from an MCP
+client is the **`uvx --from <local-path>`** pattern from the uv skill —
+this creates a temporary, isolated venv with the project's dependencies
+and runs the entry point, with no `pip install` / `uv sync` required
+on the host.
+
+The repo lives at `https://github.com/aiesecmoscow/planka-checker`.
+Any agent that wants to use it as an MCP server should clone the repo
+locally first and point `uvx --from` at the clone.
+
+### Clone the repo
+
+```bash
+git clone https://github.com/aiesecmoscow/planka-checker.git
+cd planka-checker
+```
+
+On the AIESEC dev box the canonical clone path is:
+
+```text
+/home/victorryakh/Documents/git/org.aiesecmoscow/planka-checker
+```
+
+Use the path **on your own machine** in the configs below — `uvx` does
+not search CWD for the package, and MCP clients run the server with a
+working directory different from the project.
+
+### Quick test (one-off, prints MCP handshake to stdout)
+
+From the project root, with env vars set in your shell:
+
+```bash
+PLANKA_URL=... PLANKA_USERNAME=... PLANKA_PASSWORD=... \
+PLANKA_BOARD_URLS=... \
+uvx --from . planka-checker-mcp
+```
+
+The process will block on stdin/stdout waiting for MCP messages — that's
+expected. Ctrl-C to exit. To actually exercise a tool, drive it from an
+MCP client (see configs below) or pipe a JSON-RPC handshake from a
+script.
+
+### MCP client configuration
+
+Always pass an **absolute** path to `--from`. The exact path depends on
+where the agent's machine has the clone checked out — substitute your
+own.
+
+**Claude Desktop / Cursor / Kilo (`mcp.json`):**
+
+```json
+{
+  "mcpServers": {
+    "planka-checker": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "/absolute/path/to/planka-checker",
+        "planka-checker-mcp"
+      ],
+      "env": {
+        "PLANKA_URL": "https://planka.aiesecmoscow.whaleharbor.net/",
+        "PLANKA_USERNAME": "admin@aiesecmoscow.whaleharbor.net",
+        "PLANKA_PASSWORD": "1AsPSYGiyHw78o8rSVZJfbOy",
+        "PLANKA_BOARD_URLS": "https://planka.aiesecmoscow.whaleharbor.net/boards/1705889625190434326,https://planka.aiesecmoscow.whaleharbor.net/boards/1774198793248441951",
+        "BURNING_HOURS": "48",
+        "FORGOTTEN_DAYS": "7"
+      }
+    }
+  }
+}
+```
+
+On the AIESEC dev box, replace `/absolute/path/to/planka-checker` with
+`/home/victorryakh/Documents/git/org.aiesecmoscow/planka-checker`.
+
+Notes:
+- Pass credentials via the `env` block, **not** by relying on a
+  host-side `.env` — MCP clients do not source shell env. The server
+  reads `PlankaSettings` (pydantic-settings) on every tool call, so
+  changes to `env` take effect after restarting the MCP server.
+- `--from` must point at a directory containing `pyproject.toml`
+  (i.e. the repo root), not at `src/`. `uvx` resolves the project
+  from `pyproject.toml` and exposes its `[project.scripts]` entries.
+- The first launch will take a few seconds (uv resolves and installs
+  deps into a cache venv at `~/.cache/uv/`); subsequent launches are
+  near-instant.
+
+### Alternative: published package (once the project is on PyPI)
+
+```json
+{
+  "mcpServers": {
+    "planka-checker": {
+      "command": "uvx",
+      "args": ["planka-checker-mcp"],
+      "env": { "PLANKA_URL": "...", "PLANKA_USERNAME": "...", "PLANKA_PASSWORD": "...", "PLANKA_BOARD_URLS": "..." }
+    }
+  }
+}
+```
+
+Pin a version for production: `uvx planka-checker-mcp@0.1.0`. Do **not**
+use `@latest` — it's unstable across releases.
+
+### Anti-patterns
+
+- `uvx planka-checker-mcp` without `--from <path>` — only works if the
+  package is on PyPI / a configured index.
+- `uv tool install` for the MCP server — `uv tool` puts the script on
+  `$PATH`, but it does not preserve the project layout that
+  `PlankaSettings` expects (it also goes against the uv-skill guidance
+  for MCP servers).
+- `pip install -e .` for MCP client wiring — pollutes the system
+  Python, no isolation, slower than `uvx` on subsequent runs.
+
+### Verifying the server works
+
+From the project root, after `uv sync`:
+
+```bash
+.venv/bin/python -m planka_checker.server
+```
+
+Or, using the uvx pattern (matches what the MCP client will do):
+
+```bash
+uvx --from . planka-checker-mcp
+```
+
+The process should start and block on stdin. Send it SIGINT to stop.
+If it crashes immediately, the error is almost always a missing
+`PLANKA_*` env var — set them in the shell first.
+
 ## Layout
 
 ```

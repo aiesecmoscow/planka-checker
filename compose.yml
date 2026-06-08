@@ -1,0 +1,5 @@
+services:
+  planka-checker:
+    build: .
+    env_file: .env
+    restart: no
