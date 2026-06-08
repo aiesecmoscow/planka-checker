@@ -71,7 +71,8 @@ def _format_report(report: PlankaReport) -> str:
     header = (
         f"<b>Planka {period} report</b>\n"
         f"<i>Generated {generated}</i>\n"
-        f"Boards: {meta.boards_count} · Actions: {meta.actions_count} · "
+        f"Boards: {meta.boards_count} · Cards: {meta.cards_count} · "
+        f"Actions: {meta.actions_count} · "
         f"Overdue: {meta.overdue_count} · Burning: {meta.burning_count} · "
         f"Forgotten: {meta.forgotten_count}"
     )
@@ -115,7 +116,8 @@ def _format_actions_report(report: ActionsReport) -> str:
     header = (
         f"<b>Planka {period} actions</b>\n"
         f"<i>Generated {generated}</i>\n"
-        f"Boards: {meta.boards_count} · Actions: {meta.actions_count} · "
+        f"Boards: {meta.boards_count} · Cards: {meta.cards_count} · "
+        f"Actions: {meta.actions_count} · "
         f"Overdue: {meta.overdue_count} · Burning: {meta.burning_count} · "
         f"Forgotten: {meta.forgotten_count}"
     )

@@ -194,6 +194,7 @@ async def test_daily_report_includes_recent_actions(patched_generator: PlankaRep
     report: PlankaReport = await patched_generator.generate_report(period="day")
     assert report.metadata.period == "day"
     assert report.metadata.actions_count == 2
+    assert report.metadata.cards_count == 4
     types = {a.type for a in report.actions}
     assert "commentCard" in types
     assert "createCard" in types
@@ -206,6 +207,7 @@ async def test_get_actions_daily(patched_generator: PlankaReportGenerator) -> No
     assert isinstance(report, ActionsReport)
     assert report.metadata.period == "day"
     assert report.metadata.actions_count == 2
+    assert report.metadata.cards_count == 4
     assert report.metadata.overdue_count == 1
     assert report.metadata.burning_count == 1
     assert report.metadata.forgotten_count == 1

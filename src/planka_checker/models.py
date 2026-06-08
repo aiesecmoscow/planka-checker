@@ -99,6 +99,7 @@ class ReportMetadata(BaseModel):
     period: ReportPeriod
     board_ids: list[int]
     boards_count: int
+    cards_count: int
     actions_count: int
     overdue_count: int
     burning_count: int

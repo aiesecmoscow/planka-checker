@@ -92,12 +92,15 @@ class PlankaReportGenerator:
         burning = self._get_burning_cards(world)
         forgotten = self._get_forgotten_cards(world)
 
+        cards_count = sum(len(data.cards) for data in world.board_datas)
+
         return PlankaReport(
             metadata=ReportMetadata(
                 generated_at=_now(),
                 period=period,
                 board_ids=[data.board.id for data in world.board_datas],
                 boards_count=len(world.board_datas),
+                cards_count=cards_count,
                 actions_count=len(action_summaries),
                 overdue_count=len(overdue),
                 burning_count=len(burning),
@@ -139,12 +142,15 @@ class PlankaReportGenerator:
         burning = self._get_burning_cards(world)
         forgotten = self._get_forgotten_cards(world)
 
+        cards_count = sum(len(data.cards) for data in world.board_datas)
+
         return ActionsReport(
             metadata=ReportMetadata(
                 generated_at=_now(),
                 period=period,
                 board_ids=[data.board.id for data in world.board_datas],
                 boards_count=len(world.board_datas),
+                cards_count=cards_count,
                 actions_count=len(action_summaries),
                 overdue_count=len(overdue),
                 burning_count=len(burning),
