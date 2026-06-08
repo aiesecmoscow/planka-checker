@@ -10,6 +10,7 @@ from typing import Iterable, Literal
 from planka_checker.client import PlankaClient
 from planka_checker.config import PlankaSettings
 from planka_checker.models import (
+    ActionsReport,
     ActionSummary,
     CardSummary,
     CommentInfo,
@@ -85,18 +86,11 @@ class PlankaReportGenerator:
 
         hours = PERIOD_HOURS[period]
         window_start = _now() - timedelta(hours=hours)
-        recent_actions = _filter_actions_by_period(
-            _iter_actions(world), window_start
-        )
+        action_summaries = self._collect_recent_actions(world, window_start)
 
         overdue = self._get_overdue_cards(world)
         burning = self._get_burning_cards(world)
         forgotten = self._get_forgotten_cards(world)
-
-        action_summaries = [
-            _to_action_summary(action, world) for action in recent_actions
-        ]
-        action_summaries.sort(key=lambda a: a.created_at, reverse=True)
 
         return PlankaReport(
             metadata=ReportMetadata(
@@ -116,6 +110,54 @@ class PlankaReportGenerator:
             burning_cards=burning,
             forgotten_cards=forgotten,
         )
+
+    async def get_actions(self, period: ReportPeriod = "day") -> ActionsReport:
+        """Return only the action changes that happened during the period.
+
+        Useful when the caller wants a lightweight activity feed (e.g. a
+        "what changed today/this week" report) without paying for the
+        overdue / burning / forgotten card analysis.
+
+        Args:
+            period: Either ``"day"`` (last 24h) or ``"week"`` (last 7d).
+        """
+        if period not in PERIOD_HOURS:
+            raise ValueError(
+                f"Invalid period: {period!r}. Expected one of {list(PERIOD_HOURS)}"
+            )
+
+        world = await self._build_world()
+        hours = PERIOD_HOURS[period]
+        window_start = _now() - timedelta(hours=hours)
+        action_summaries = self._collect_recent_actions(world, window_start)
+
+        return ActionsReport(
+            metadata=ReportMetadata(
+                generated_at=_now(),
+                period=period,
+                board_ids=[data.board.id for data in world.board_datas],
+                boards_count=len(world.board_datas),
+                actions_count=len(action_summaries),
+                overdue_count=0,
+                burning_count=0,
+                forgotten_count=0,
+                burning_hours=self._settings.burning_hours,
+                forgotten_days=self._settings.forgotten_days,
+            ),
+            actions=action_summaries,
+        )
+
+    def _collect_recent_actions(
+        self, world: _World, window_start: datetime
+    ) -> list[ActionSummary]:
+        recent_actions = _filter_actions_by_period(
+            _iter_actions(world), window_start
+        )
+        action_summaries = [
+            _to_action_summary(action, world) for action in recent_actions
+        ]
+        action_summaries.sort(key=lambda a: a.created_at, reverse=True)
+        return action_summaries
 
     async def get_overdue_cards(self) -> list[CardSummary]:
         world = await self._build_world()

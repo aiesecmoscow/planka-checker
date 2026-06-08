@@ -24,11 +24,19 @@ def _build_parser() -> argparse.ArgumentParser:
 
     daily = sub.add_parser("daily", help="Print a daily Planka report as JSON")
     weekly = sub.add_parser("weekly", help="Print a weekly Planka report as JSON")
+    daily_actions = sub.add_parser(
+        "daily-actions",
+        help="Print only the card action changes from the last 24 hours as JSON",
+    )
+    weekly_actions = sub.add_parser(
+        "weekly-actions",
+        help="Print only the card action changes from the last 7 days as JSON",
+    )
     overdue = sub.add_parser("overdue", help="Print overdue cards as JSON")
     burning = sub.add_parser("burning", help="Print burning cards as JSON")
     forgotten = sub.add_parser("forgotten", help="Print forgotten cards as JSON")
 
-    for p in (daily, weekly, overdue, burning, forgotten):
+    for p in (daily, weekly, daily_actions, weekly_actions, overdue, burning, forgotten):
         p.add_argument(
             "--pretty",
             action="store_true",
@@ -54,15 +62,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _print(data: object, pretty: bool, summarize: bool, kind: str) -> None:
     if summarize:
-        from planka_checker.models import CardSummary, PlankaReport
+        from planka_checker.models import ActionsReport, CardSummary, PlankaReport
 
-        if isinstance(data, PlankaReport):
+        if isinstance(data, (PlankaReport, ActionsReport)):
             meta = data.metadata
             print(
                 f"Planka report ({meta.period}) generated {meta.generated_at.isoformat()}\n"
-                f"  Boards: {meta.boards_count}  Actions: {meta.actions_count}  "
-                f"Overdue: {meta.overdue_count}  Burning: {meta.burning_count}  "
-                f"Forgotten: {meta.forgotten_count}"
+                f"  Boards: {meta.boards_count}  Actions: {meta.actions_count}"
             )
             if data.actions:
                 print("\nRecent actions:")
@@ -71,15 +77,16 @@ def _print(data: object, pretty: bool, summarize: bool, kind: str) -> None:
                         f"  - {a.created_at.isoformat()}  {a.user_name}  "
                         f"{a.type}  {a.card_name}"
                     )
-            for label, items in (
-                ("Overdue", data.overdue_cards),
-                ("Burning", data.burning_cards),
-                ("Forgotten", data.forgotten_cards),
-            ):
-                if items:
-                    print(f"\n{label} cards ({len(items)}):")
-                    for c in items:
-                        _summarize_card(c)
+            if isinstance(data, PlankaReport):
+                for label, items in (
+                    ("Overdue", data.overdue_cards),
+                    ("Burning", data.burning_cards),
+                    ("Forgotten", data.forgotten_cards),
+                ):
+                    if items:
+                        print(f"\n{label} cards ({len(items)}):")
+                        for c in items:
+                            _summarize_card(c)
             return
         if isinstance(data, list) and all(isinstance(d, CardSummary) for d in data):
             print(f"{kind} cards ({len(data)}):")
@@ -121,6 +128,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     elif args.command == "weekly":
         data = asyncio.run(generator.generate_report(period="week"))
         kind = "Weekly"
+    elif args.command == "daily-actions":
+        data = asyncio.run(generator.get_actions(period="day"))
+        kind = "Daily actions"
+    elif args.command == "weekly-actions":
+        data = asyncio.run(generator.get_actions(period="week"))
+        kind = "Weekly actions"
     elif args.command == "overdue":
         data = asyncio.run(generator.get_overdue_cards())
         kind = "Overdue"

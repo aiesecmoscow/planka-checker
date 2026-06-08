@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from planka_checker.config import PlankaSettings
-from planka_checker.models import PlankaReport
+from planka_checker.models import ActionsReport, PlankaReport
 from planka_checker.planka_models import (
     PlankaAction,
     PlankaBoard,
@@ -199,6 +199,41 @@ async def test_daily_report_includes_recent_actions(patched_generator: PlankaRep
     assert "createCard" in types
     assert report.metadata.forgotten_count >= 1
     assert report.metadata.burning_count >= 1
+
+
+async def test_get_actions_daily(patched_generator: PlankaReportGenerator) -> None:
+    report = await patched_generator.get_actions(period="day")
+    assert isinstance(report, ActionsReport)
+    assert report.metadata.period == "day"
+    assert report.metadata.actions_count == 2
+    assert report.metadata.overdue_count == 0
+    assert report.metadata.burning_count == 0
+    assert report.metadata.forgotten_count == 0
+    assert {a.type for a in report.actions} == {"commentCard", "createCard"}
+    assert all(a.board_id for a in report.actions)
+    assert all(a.user_name for a in report.actions)
+    assert [a.id for a in report.actions] == sorted(
+        (a.id for a in report.actions),
+        key=lambda aid: next(x.created_at for x in report.actions if x.id == aid),
+        reverse=True,
+    )
+
+
+async def test_get_actions_weekly_includes_older(patched_generator: PlankaReportGenerator) -> None:
+    report = await patched_generator.get_actions(period="week")
+    assert isinstance(report, ActionsReport)
+    assert report.metadata.period == "week"
+    assert report.metadata.actions_count == 2
+    types = {a.type for a in report.actions}
+    assert {"commentCard", "createCard"} <= types
+    assert report.metadata.actions_count >= 2
+
+
+async def test_get_actions_invalid_period(patched_generator: PlankaReportGenerator) -> None:
+    import pytest
+
+    with pytest.raises(ValueError):
+        await patched_generator.get_actions(period="month")  # type: ignore[arg-type]
 
 
 def test_settings_board_id_parsing() -> None:

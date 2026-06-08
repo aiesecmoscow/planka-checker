@@ -2,6 +2,7 @@
 
 from planka_checker.config import PlankaSettings
 from planka_checker.models import (
+    ActionsReport,
     ActionSummary,
     CardSummary,
     CommentInfo,
@@ -14,6 +15,7 @@ __all__ = [
     "PlankaSettings",
     "PlankaReportGenerator",
     "PlankaReport",
+    "ActionsReport",
     "ReportMetadata",
     "CardSummary",
     "ActionSummary",

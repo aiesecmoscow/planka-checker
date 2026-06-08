@@ -5,7 +5,7 @@ from __future__ import annotations
 from mcp.server.fastmcp import FastMCP
 
 from planka_checker.config import PlankaSettings
-from planka_checker.models import CardSummary, PlankaReport
+from planka_checker.models import ActionsReport, CardSummary, PlankaReport
 from planka_checker.reports import PlankaReportGenerator
 
 mcp = FastMCP(
@@ -42,6 +42,34 @@ async def get_daily_report() -> dict:
 )
 async def get_weekly_report() -> dict:
     return (await _generator().generate_report(period="week")).model_dump(mode="json")
+
+
+@mcp.tool(
+    name="get_daily_actions",
+    description=(
+        "Return only the card action changes (createCard, moveCard, "
+        "commentCard, completeTask, addMemberToCard, etc.) from the last "
+        "24 hours across the configured boards. No overdue/burning/"
+        "forgotten analysis — this is a lightweight activity feed."
+    ),
+)
+async def get_daily_actions() -> dict:
+    report: ActionsReport = await _generator().get_actions(period="day")
+    return report.model_dump(mode="json")
+
+
+@mcp.tool(
+    name="get_weekly_actions",
+    description=(
+        "Return only the card action changes (createCard, moveCard, "
+        "commentCard, completeTask, addMemberToCard, etc.) from the last "
+        "7 days across the configured boards. No overdue/burning/forgotten "
+        "analysis — this is a lightweight activity feed."
+    ),
+)
+async def get_weekly_actions() -> dict:
+    report: ActionsReport = await _generator().get_actions(period="week")
+    return report.model_dump(mode="json")
 
 
 @mcp.tool(

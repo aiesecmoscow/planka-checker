@@ -131,3 +131,21 @@ class PlankaReport(BaseModel):
             "Overdue cards with no activity for forgotten_days or more"
         ),
     )
+
+
+class ActionsReport(BaseModel):
+    """Slim report containing only the action changes for a period.
+
+    Returned by the action-only MCP tools / CLI subcommands when the
+    caller only cares about what changed (createCard, moveCard,
+    commentCard, completeTask, etc.) and not about overdue / burning /
+    forgotten cards.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    metadata: ReportMetadata
+    actions: list[ActionSummary] = Field(
+        default_factory=list,
+        description="All card actions that occurred during the report period",
+    )

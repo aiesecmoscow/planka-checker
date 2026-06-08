@@ -10,7 +10,7 @@ from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from planka_checker.models import CardSummary, PlankaReport
+from planka_checker.models import ActionsReport, CardSummary, PlankaReport
 
 if TYPE_CHECKING:
     from planka_checker.config import PlankaSettings
@@ -76,30 +76,52 @@ def _format_report(report: PlankaReport) -> str:
         f"Forgotten: {meta.forgotten_count}"
     )
     sections: list[str] = [header]
-    if report.actions:
-        recent = report.actions[:10]
-        lines = [f"\n<b>Recent actions ({len(report.actions)}):</b>"]
-        for a in recent:
-            ts = _escape_html(a.created_at.strftime("%Y-%m-%d %H:%M"))
-            board_suffix = ""
-            if a.board_name:
-                board_label = _escape_html(a.board_name)
-                if a.board_url:
-                    board_suffix = f" (<a href=\"{a.board_url}\">{board_label}</a>)"
-                else:
-                    board_suffix = f" ({board_label})"
-            lines.append(
-                f"• {ts} {_escape_html(a.user_name)} "
-                f"<code>{_escape_html(a.type)}</code> "
-                f"<a href=\"{a.card_url}\">{_escape_html(a.card_name)}</a>"
-                f"{board_suffix}"
-            )
-        if len(report.actions) > 10:
-            lines.append(f"<i>…and {len(report.actions) - 10} more</i>")
-        sections.extend(lines)
+    sections.extend(_format_actions_section(report.actions))
     sections.extend(_format_section("Overdue", report.overdue_cards))
     sections.extend(_format_section("Burning", report.burning_cards))
     sections.extend(_format_section("Forgotten", report.forgotten_cards))
+    return "\n".join(sections)
+
+
+def _format_actions_section(actions: list) -> list[str]:  # type: ignore[type-arg]
+    if not actions:
+        return []
+    recent = actions[:10]
+    lines = [f"\n<b>Recent actions ({len(actions)}):</b>"]
+    for a in recent:
+        ts = _escape_html(a.created_at.strftime("%Y-%m-%d %H:%M"))
+        board_suffix = ""
+        if a.board_name:
+            board_label = _escape_html(a.board_name)
+            if a.board_url:
+                board_suffix = f" (<a href=\"{a.board_url}\">{board_label}</a>)"
+            else:
+                board_suffix = f" ({board_label})"
+        lines.append(
+            f"• {ts} {_escape_html(a.user_name)} "
+            f"<code>{_escape_html(a.type)}</code> "
+            f"<a href=\"{a.card_url}\">{_escape_html(a.card_name)}</a>"
+            f"{board_suffix}"
+        )
+    if len(actions) > 10:
+        lines.append(f"<i>…and {len(actions) - 10} more</i>")
+    return lines
+
+
+def _format_actions_report(report: ActionsReport) -> str:
+    meta = report.metadata
+    period = _escape_html(meta.period)
+    generated = _escape_html(meta.generated_at.strftime("%Y-%m-%d %H:%M"))
+    header = (
+        f"<b>Planka {period} actions</b>\n"
+        f"<i>Generated {generated}</i>\n"
+        f"Boards: {meta.boards_count} · Actions: {meta.actions_count}"
+    )
+    sections: list[str] = [header]
+    if not report.actions:
+        sections.append("\n<i>No actions in this period.</i>")
+    else:
+        sections.extend(_format_actions_section(report.actions))
     return "\n".join(sections)
 
 
@@ -114,6 +136,8 @@ def format_message(data: object, kind: str) -> str:
     """Render a report / card list as a Telegram-safe HTML message."""
     if isinstance(data, PlankaReport):
         return _format_report(data)
+    if isinstance(data, ActionsReport):
+        return _format_actions_report(data)
     if isinstance(data, list) and all(isinstance(x, CardSummary) for x in data):
         return _format_card_list(kind, data)  # type: ignore[arg-type]
     return (
