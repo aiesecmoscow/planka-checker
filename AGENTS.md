@@ -59,7 +59,7 @@ plus 1 for the board itself. For a 49-card board that's ~99 calls × ~0.8s ≈
 80s on a real Planka instance. The 2-minute default test timeout is too
 short for dual-board reports — use background processes for full-board tests.
 
-Key optimisations already applied:
+Optimisations already applied:
 - `PlankaReportGenerator` caches the world (`_cached_world`) so
   `generate_report()` only does the network work once. Don't undo this —
   the previous version rebuilt the world 4× per call (once per helper).
@@ -67,9 +67,46 @@ Key optimisations already applied:
 - Lazy `self.client` property — instantiating the generator does NOT
   trigger a network call. The auth call only happens on first request.
 
-**Future perf work** (not done): concurrent requests, or fetch comments
-lazily only for cards that need `last_comment` (most cards don't have
-any text comments).
+## Direction: move to async
+
+The 80–135s wall-clock time on a real Planka is dominated by I/O wait
+(per-card GETs at ~0.8s each). **The codebase is headed toward async.**
+The current sync implementation is a stepping stone, not a target.
+
+When you do the migration, prefer this shape:
+
+- Replace `urllib.request` with `httpx.AsyncClient` (single client per
+  generator, reused across all calls — built-in connection pooling +
+  keep-alive).
+- Make `PlankaClient` an `async` class. `get_board`, `get_boards`,
+  `get_card_actions`, `get_card_comments`, `get_card_activity` all become
+  `async def` and return awaitables.
+- `PlankaReportGenerator` exposes `async def generate_report(...)`,
+  `async def get_overdue_cards()`, etc.
+- Fan out the per-card fetches with `asyncio.gather()` and a bounded
+  `asyncio.Semaphore` (start with `limit=20`) so we don't hammer the
+  Planka instance. Realistic target: ~5–10s for a 49-card board.
+- `get_card_comments` can be skipped for cards whose `commentsTotal` is
+  0 (already in `board._included.cards[i].commentsTotal`) — that's a
+  free 50%+ speedup on most boards.
+- FastMCP supports `async def` tool functions natively; just convert
+  the `@mcp.tool()` bodies.
+- CLI keeps the same surface but uses `asyncio.run(...)` at the entry.
+
+Caching is a first-class concern in the async world. Patterns to keep:
+- `PlankaReportGenerator._cached_world` (already there) — the same world
+  object is reused across the three helpers in `generate_report()`. Make
+  it an `asyncio.Lock` if you ever rebuild concurrently.
+- A short-TTL in-memory cache on `PlankaClient` for
+  `get_card_actions` / `get_card_comments` keyed by card id, so repeated
+  queries (e.g. `get_daily_report` then `get_weekly_report` in the same
+  MCP session) don't re-hit the API. The token itself is already cached
+  in `PlankaClient._token` — extend that idea to responses.
+
+Tests will need `pytest-asyncio` and `AsyncMock` from
+`unittest.mock`. The existing fixture pattern (patch the `client`
+property on the generator) still works — just inject an `AsyncMock`
+whose methods are `async def`.
 
 ## Running
 
@@ -128,12 +165,13 @@ behaviour or tests / env loading will break.
 - When adding a new test scenario, build cards/actions with the
   `PlankaCard` / `PlankaAction` dataclasses from `planka_models.py`,
   not the public Pydantic models.
+- Once the async migration lands, switch to `pytest-asyncio` and
+  `AsyncMock` (methods are `async def`). The same `client` patch
+  pattern still applies.
 
 ## What NOT to do
 
 - Don't re-add `plankapy` as a dependency.
-- Don't introduce async/await — the codebase is sync. If you need concurrency,
-  use `concurrent.futures.ThreadPoolExecutor` with the existing sync client.
 - Don't change `PlankaReportGenerator` to rebuild the world per call —
   the cache exists for a reason.
 - Don't add comments to code — the project owner has explicitly asked
