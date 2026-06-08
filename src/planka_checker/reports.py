@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Iterable, Literal
@@ -53,7 +54,6 @@ class PlankaReportGenerator:
     def __init__(self, settings: PlankaSettings | None = None) -> None:
         self._settings = settings or PlankaSettings()
         self._client: PlankaClient | None = None
-        self._cached_world: _World | None = None
 
     @property
     def settings(self) -> PlankaSettings:
@@ -65,23 +65,12 @@ class PlankaReportGenerator:
             self._client = PlankaClient(self._settings)
         return self._client
 
-    def invalidate_cache(self) -> None:
-        """Drop the cached world so the next report fetches fresh data."""
-        self._cached_world = None
-
-    def _build_world(self, *, use_cache: bool = True) -> _World:
-        if use_cache and self._cached_world is not None:
-            return self._cached_world
+    async def _build_world(self) -> _World:
         board_ids = list(self._settings.board_ids)
-        board_datas = self.client.get_boards(board_ids)
-        world = _build_world(board_datas, self.client)
-        self._cached_world = world
-        return world
+        board_datas = await self.client.get_boards(board_ids)
+        return await _build_world(board_datas, self.client)
 
-    def _build_world_fresh(self) -> _World:
-        return self._build_world(use_cache=False)
-
-    def generate_report(self, period: ReportPeriod = "day") -> PlankaReport:
+    async def generate_report(self, period: ReportPeriod = "day") -> PlankaReport:
         """Generate a complete report for the configured boards.
 
         Args:
@@ -92,8 +81,7 @@ class PlankaReportGenerator:
                 f"Invalid period: {period!r}. Expected one of {list(PERIOD_HOURS)}"
             )
 
-        self.invalidate_cache()
-        world = self._build_world(use_cache=False)
+        world = await self._build_world()
 
         hours = PERIOD_HOURS[period]
         window_start = _now() - timedelta(hours=hours)
@@ -129,16 +117,16 @@ class PlankaReportGenerator:
             forgotten_cards=forgotten,
         )
 
-    def get_overdue_cards(self) -> list[CardSummary]:
-        world = self._build_world_fresh()
+    async def get_overdue_cards(self) -> list[CardSummary]:
+        world = await self._build_world()
         return self._get_overdue_cards(world)
 
-    def get_burning_cards(self) -> list[CardSummary]:
-        world = self._build_world_fresh()
+    async def get_burning_cards(self) -> list[CardSummary]:
+        world = await self._build_world()
         return self._get_burning_cards(world)
 
-    def get_forgotten_cards(self) -> list[CardSummary]:
-        world = self._build_world_fresh()
+    async def get_forgotten_cards(self) -> list[CardSummary]:
+        world = await self._build_world()
         return self._get_forgotten_cards(world)
 
     def _get_overdue_cards(self, world: _World) -> list[CardSummary]:
@@ -175,17 +163,32 @@ class PlankaReportGenerator:
         return result
 
 
-def _build_world(board_datas: list[PlankaBoardData], client: PlankaClient) -> _World:
+async def _build_world(
+    board_datas: list[PlankaBoardData], client: PlankaClient
+) -> _World:
     users_by_id: dict[int, PlankaUser] = {}
     boards_by_id: dict[int, PlankaBoardData] = {}
     for data in board_datas:
         boards_by_id[data.board.id] = data
         for user in data.users.values():
             users_by_id.setdefault(user.id, user)
-    actions_by_card: dict[int, list[PlankaAction]] = {}
+
+    pairs: list[tuple[int, int]] = []
     for data in board_datas:
-        for card_id in data.cards:
-            actions_by_card[card_id] = client.get_card_activity(card_id)
+        for card in data.cards.values():
+            pairs.append((card.id, card.comments_total))
+
+    activity_results = await asyncio.gather(
+        *(
+            client.get_card_activity(card_id, comments_total=comments_total)
+            for card_id, comments_total in pairs
+        )
+    )
+    actions_by_card: dict[int, list[PlankaAction]] = {
+        card_id: list(actions)
+        for (card_id, _), actions in zip(pairs, activity_results)
+    }
+
     return _World(
         board_datas=board_datas,
         users_by_id=users_by_id,

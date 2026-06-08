@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -48,6 +48,7 @@ def _card(
     task_ids: list[int] | None = None,
     created_at: datetime | None = None,
     updated_at: datetime | None = None,
+    comments_total: int = 0,
 ) -> PlankaCard:
     base = _now() - timedelta(days=30)
     return PlankaCard(
@@ -62,6 +63,7 @@ def _card(
         member_ids=member_ids or [],
         label_ids=label_ids or [],
         task_ids=task_ids or [],
+        comments_total=comments_total,
     )
 
 
@@ -153,37 +155,43 @@ def patched_generator() -> PlankaReportGenerator:
     board_data = _build_board_data(actions)
 
     fake_client = MagicMock()
-    fake_client.get_boards.return_value = [board_data]
-    fake_client.get_card_activity.side_effect = lambda cid: actions.get(cid, [])
+    fake_client.get_boards = AsyncMock(return_value=[board_data])
+    fake_client.get_card_activity = AsyncMock(
+        side_effect=lambda cid, comments_total=0: actions.get(cid, [])
+    )
+    fake_client.get_card_actions = AsyncMock(
+        side_effect=lambda cid: actions.get(cid, [])
+    )
+    fake_client.get_card_comments = AsyncMock(return_value=[])
 
     with patch.object(PlankaReportGenerator, "client", new=fake_client):
         yield PlankaReportGenerator(settings)
 
 
-def test_overdue_cards(patched_generator: PlankaReportGenerator) -> None:
-    overdue = patched_generator.get_overdue_cards()
+async def test_overdue_cards(patched_generator: PlankaReportGenerator) -> None:
+    overdue = await patched_generator.get_overdue_cards()
     names = {c.name for c in overdue}
     assert "Overdue In Progress" in names
     assert "Completed Tasks Card" not in names
 
 
-def test_burning_cards(patched_generator: PlankaReportGenerator) -> None:
-    burning = patched_generator.get_burning_cards()
+async def test_burning_cards(patched_generator: PlankaReportGenerator) -> None:
+    burning = await patched_generator.get_burning_cards()
     names = {c.name for c in burning}
     assert "Burning Soon" in names
     assert "Future Task" not in names
     assert "Overdue In Progress" not in names
 
 
-def test_forgotten_cards(patched_generator: PlankaReportGenerator) -> None:
-    forgotten = patched_generator.get_forgotten_cards()
+async def test_forgotten_cards(patched_generator: PlankaReportGenerator) -> None:
+    forgotten = await patched_generator.get_forgotten_cards()
     names = {c.name for c in forgotten}
     assert "Overdue In Progress" in names
     assert "Burning Soon" not in names
 
 
-def test_daily_report_includes_recent_actions(patched_generator: PlankaReportGenerator) -> None:
-    report: PlankaReport = patched_generator.generate_report(period="day")
+async def test_daily_report_includes_recent_actions(patched_generator: PlankaReportGenerator) -> None:
+    report: PlankaReport = await patched_generator.generate_report(period="day")
     assert report.metadata.period == "day"
     assert report.metadata.actions_count == 2
     types = {a.type for a in report.actions}
@@ -204,3 +212,34 @@ def test_settings_board_id_parsing() -> None:
         ),
     )
     assert s.board_ids == [123, 456, 789, 42]
+
+
+async def test_get_card_activity_skips_comments_when_zero() -> None:
+    from planka_checker.client import PlankaClient
+
+    fake_client = MagicMock()
+    fake_client._request = AsyncMock(
+        side_effect=lambda method, path, **kw: {
+            "items": [],
+        }
+        if path.endswith("/actions")
+        else None
+    )
+
+    client = PlankaClient(_settings())
+    client._request = fake_client._request
+    result = await client.get_card_activity(123, comments_total=0)
+
+    actions_calls = [
+        c
+        for c in fake_client._request.await_args_list
+        if c.args[1].endswith("/actions")
+    ]
+    comments_calls = [
+        c
+        for c in fake_client._request.await_args_list
+        if c.args[1].endswith("/comments")
+    ]
+    assert len(actions_calls) == 1
+    assert comments_calls == []
+    assert result == []

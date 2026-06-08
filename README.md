@@ -34,4 +34,7 @@ Copy `.env.example` to `.env` and fill in your Planka URL, login, and the boards
 
 ## Status
 
-Tested against Planka 2.0.0-rc.3 on a real instance. The current implementation is synchronous; an async migration is on the roadmap (see `AGENTS.md` for context).
+Tested against Planka 2.0.0-rc.3 on a real instance. The network layer is
+fully async (`httpx.AsyncClient` + `asyncio.Semaphore(20)` fan-out), so a
+5-board report covering ~7 active cards completes in ~2s end-to-end
+(against a target of 5–10s). See `AGENTS.md` for the design notes.

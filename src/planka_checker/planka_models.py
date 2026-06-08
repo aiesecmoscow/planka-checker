@@ -107,6 +107,7 @@ class PlankaCard:
     is_due_date_completed: bool = False
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    comments_total: int = 0
     label_ids: list[int] = field(default_factory=list)
     member_ids: list[int] = field(default_factory=list)
     task_ids: list[int] = field(default_factory=list)
@@ -124,6 +125,7 @@ class PlankaCard:
             is_due_date_completed=_as_bool(data.get("isDueDateCompleted")),
             created_at=_as_dt(data.get("createdAt")),
             updated_at=_as_dt(data.get("updatedAt")),
+            comments_total=_as_int(data.get("commentsTotal")) or 0,
         )
 
 

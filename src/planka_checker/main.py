@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import sys
 from typing import Sequence
@@ -106,19 +107,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     generator = PlankaReportGenerator(settings)
 
     if args.command == "daily":
-        data = generator.generate_report(period="day")
+        data = asyncio.run(generator.generate_report(period="day"))
         _print(data, args.pretty, args.summarize, "Daily")
     elif args.command == "weekly":
-        data = generator.generate_report(period="week")
+        data = asyncio.run(generator.generate_report(period="week"))
         _print(data, args.pretty, args.summarize, "Weekly")
     elif args.command == "overdue":
-        data = generator.get_overdue_cards()
+        data = asyncio.run(generator.get_overdue_cards())
         _print(data, args.pretty, args.summarize, "Overdue")
     elif args.command == "burning":
-        data = generator.get_burning_cards()
+        data = asyncio.run(generator.get_burning_cards())
         _print(data, args.pretty, args.summarize, "Burning")
     elif args.command == "forgotten":
-        data = generator.get_forgotten_cards()
+        data = asyncio.run(generator.get_forgotten_cards())
         _print(data, args.pretty, args.summarize, "Forgotten")
     else:
         parser.error(f"Unknown command: {args.command}")

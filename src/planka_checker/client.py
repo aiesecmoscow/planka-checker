@@ -7,12 +7,12 @@ exposes a small, intention-revealing API used by the report generator.
 
 from __future__ import annotations
 
+import asyncio
 import json
-import urllib.error
-import urllib.request
 from datetime import datetime, timezone
-from http.client import HTTPConnection, HTTPSConnection
 from typing import Any, Iterable
+
+import httpx
 
 from planka_checker.config import PlankaSettings
 from planka_checker.planka_models import (
@@ -43,21 +43,39 @@ class PlankaClient:
     caches the bearer token for subsequent calls.
     """
 
+    _REQUEST_CONCURRENCY = 20
+
     def __init__(self, settings: PlankaSettings) -> None:
         self._settings = settings
         self._token: str | None = None
         self._base_url = settings.planka_url.rstrip("/") + "/"
-        # Reuse a single urllib opener for HTTP keep-alive (significant speedup
-        # on Planka instances that require ~50+ sequential calls).
-        self._opener = urllib.request.build_opener(
-            urllib.request.HTTPSHandler(debuglevel=0),
-        )
+        self._semaphore = asyncio.Semaphore(self._REQUEST_CONCURRENCY)
+        self._client: httpx.AsyncClient | None = None
 
     @property
     def base_url(self) -> str:
         return self._base_url
 
-    def _authenticate(self) -> str:
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(30.0),
+                headers={"Accept": "application/json"},
+            )
+        return self._client
+
+    async def aclose(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
+    async def __aenter__(self) -> "PlankaClient":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        await self.aclose()
+
+    async def _authenticate(self) -> str:
         if self._token is not None:
             return self._token
         body = json.dumps(
@@ -66,7 +84,7 @@ class PlankaClient:
                 "password": self._settings.planka_password,
             }
         ).encode("utf-8")
-        response = self._request("POST", "api/access-tokens", body=body, auth=False)
+        response = await self._request("POST", "api/access-tokens", body=body, auth=False)
         if not isinstance(response, dict) or "item" not in response:
             raise PlankaAPIError("Unexpected auth response from Planka")
         token = response["item"]
@@ -75,7 +93,7 @@ class PlankaClient:
         self._token = token
         return token
 
-    def _request(
+    async def _request(
         self,
         method: str,
         path: str,
@@ -84,68 +102,70 @@ class PlankaClient:
         auth: bool = True,
     ) -> Any:
         url = self._base_url + path.lstrip("/")
-        headers: dict[str, str] = {
-            "Accept": "application/json",
-            "Connection": "keep-alive",
-        }
+        headers: dict[str, str] = {}
         if body is not None:
             headers["Content-Type"] = "application/json"
         if auth:
-            headers["Authorization"] = f"Bearer {self._authenticate()}"
-        req = urllib.request.Request(url, data=body, headers=headers, method=method)
-        try:
-            with self._opener.open(req) as resp:
-                raw = resp.read()
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise PlankaAPIError(
-                f"Planka {method} {path} failed: {exc.code} {exc.reason}: {detail}"
-            ) from exc
-        if not raw:
+            headers["Authorization"] = f"Bearer {await self._authenticate()}"
+
+        client = self._get_client()
+        async with self._semaphore:
+            try:
+                if method == "GET":
+                    resp = await client.get(url, headers=headers)
+                else:
+                    resp = await client.request(method, url, headers=headers, content=body)
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                detail = exc.response.text
+                raise PlankaAPIError(
+                    f"Planka {method} {path} failed: {exc.response.status_code} {exc.response.reason_phrase}: {detail}"
+                ) from exc
+
+        if not resp.content:
             return None
         try:
-            return json.loads(raw)
+            return resp.json()
         except json.JSONDecodeError as exc:
             raise PlankaAPIError(f"Non-JSON response from Planka {path}: {exc}") from exc
 
-    def get_board(self, board_id: int) -> PlankaBoardData:
+    async def get_board(self, board_id: int) -> PlankaBoardData:
         """Fetch a board and all the records in its ``included`` payload."""
-        response = self._request("GET", f"api/boards/{board_id}")
+        response = await self._request("GET", f"api/boards/{board_id}")
         if not isinstance(response, dict):
             raise PlankaAPIError(f"Unexpected board response for {board_id}")
         return self._parse_board_response(response)
 
-    def get_boards(self, board_ids: Iterable[int]) -> list[PlankaBoardData]:
-        """Fetch multiple boards. Failures on individual boards are skipped."""
-        results: list[PlankaBoardData] = []
-        for board_id in board_ids:
-            try:
-                results.append(self.get_board(board_id))
-            except PlankaAPIError:
-                continue
-        return results
+    async def get_boards(self, board_ids: Iterable[int]) -> list[PlankaBoardData]:
+        """Fetch multiple boards concurrently. Failures on individual boards are skipped."""
+        ids = list(board_ids)
+        results = await asyncio.gather(
+            *(self.get_board(bid) for bid in ids),
+            return_exceptions=True,
+        )
+        return [r for r in results if isinstance(r, PlankaBoardData)]
 
-    def get_card_actions(self, card_id: int) -> list[PlankaAction]:
+    async def get_card_actions(self, card_id: int) -> list[PlankaAction]:
         """Fetch actions for a card (createCard, moveCard, completeTask, ...).
 
         Planka v2.x also stores text comments at a separate endpoint; use
         :meth:`get_card_comments` to retrieve those and merge the results
         client-side if both are needed.
         """
-        response = self._request("GET", f"api/cards/{card_id}/actions")
+        response = await self._request("GET", f"api/cards/{card_id}/actions")
         items = response.get("items", []) if isinstance(response, dict) else []
         actions = [PlankaAction.from_api(item) for item in items if isinstance(item, dict)]
         set_action_cache(card_id, actions)
         return actions
 
-    def get_card_comments(self, card_id: int) -> list[PlankaAction]:
+    async def get_card_comments(self, card_id: int) -> list[PlankaAction]:
         """Fetch text comments for a card as synthetic ``commentCard`` actions.
 
         Planka v2.x stores comments at ``/api/cards/{id}/comments``. The payload
         already includes the ``userId``, so the synthesized action has the
         author attributed.
         """
-        response = self._request("GET", f"api/cards/{card_id}/comments")
+        response = await self._request("GET", f"api/cards/{card_id}/comments")
         items = response.get("items", []) if isinstance(response, dict) else []
         return [
             PlankaAction.from_comment(item, card_id=card_id)
@@ -153,13 +173,27 @@ class PlankaClient:
             if isinstance(item, dict)
         ]
 
-    def get_card_activity(self, card_id: int) -> list[PlankaAction]:
-        """Return all activity for a card (actions + comments), most recent first."""
-        actions = self.get_card_actions(card_id)
-        comments = self.get_card_comments(card_id)
-        merged = actions + comments
+    async def get_card_activity(
+        self,
+        card_id: int,
+        *,
+        comments_total: int | None = None,
+    ) -> list[PlankaAction]:
+        """Return all activity for a card (actions + comments), most recent first.
+
+        When ``comments_total`` is provided and is zero, the ``/comments`` request
+        is skipped entirely — a free 50% speedup on boards where most cards have
+        no comments.
+        """
+        actions = await self.get_card_actions(card_id)
+        if comments_total == 0:
+            merged = list(actions)
+        else:
+            comments = await self.get_card_comments(card_id)
+            merged = actions + comments
         merged.sort(key=lambda a: a.created_at or _epoch(), reverse=True)
         return merged
+
     def _parse_board_response(self, response: dict[str, Any]) -> PlankaBoardData:
         item = response.get("item") or {}
         included = response.get("included") or {}

@@ -29,8 +29,8 @@ def _generator() -> PlankaReportGenerator:
         "including overdue/burning/forgotten cards, for the configured boards."
     ),
 )
-def get_daily_report() -> dict:
-    return _generator().generate_report(period="day").model_dump(mode="json")
+async def get_daily_report() -> dict:
+    return (await _generator().generate_report(period="day")).model_dump(mode="json")
 
 
 @mcp.tool(
@@ -40,8 +40,8 @@ def get_daily_report() -> dict:
         "including overdue/burning/forgotten cards, for the configured boards."
     ),
 )
-def get_weekly_report() -> dict:
-    return _generator().generate_report(period="week").model_dump(mode="json")
+async def get_weekly_report() -> dict:
+    return (await _generator().generate_report(period="week")).model_dump(mode="json")
 
 
 @mcp.tool(
@@ -51,8 +51,8 @@ def get_weekly_report() -> dict:
         "configured boards. Each card is a full CardSummary with last activity."
     ),
 )
-def get_overdue_cards() -> list[dict]:
-    cards: list[CardSummary] = _generator().get_overdue_cards()
+async def get_overdue_cards() -> list[dict]:
+    cards: list[CardSummary] = await _generator().get_overdue_cards()
     return [card.model_dump(mode="json") for card in cards]
 
 
@@ -63,8 +63,8 @@ def get_overdue_cards() -> list[dict]:
         "across the configured boards."
     ),
 )
-def get_burning_cards() -> list[dict]:
-    cards: list[CardSummary] = _generator().get_burning_cards()
+async def get_burning_cards() -> list[dict]:
+    cards: list[CardSummary] = await _generator().get_burning_cards()
     return [card.model_dump(mode="json") for card in cards]
 
 
@@ -75,8 +75,8 @@ def get_burning_cards() -> list[dict]:
         "FORGOTTEN_DAYS across the configured boards."
     ),
 )
-def get_forgotten_cards() -> list[dict]:
-    cards: list[CardSummary] = _generator().get_forgotten_cards()
+async def get_forgotten_cards() -> list[dict]:
+    cards: list[CardSummary] = await _generator().get_forgotten_cards()
     return [card.model_dump(mode="json") for card in cards]
 
 
@@ -87,10 +87,10 @@ def get_forgotten_cards() -> list[dict]:
         "burning + forgotten cards) for the given period ('day' or 'week')."
     ),
 )
-def get_full_report(period: str = "day") -> dict:
+async def get_full_report(period: str = "day") -> dict:
     if period not in ("day", "week"):
         raise ValueError(f"Invalid period: {period!r}. Expected 'day' or 'week'.")
-    report: PlankaReport = _generator().generate_report(period=period)
+    report: PlankaReport = await _generator().generate_report(period=period)
     return report.model_dump(mode="json")
 
 
