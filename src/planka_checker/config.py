@@ -77,6 +77,39 @@ class PlankaSettings(BaseSettings):
         ),
     ] = 7
 
+    telegram_bot_token: Annotated[
+        str,
+        Field(
+            default="",
+            description=(
+                "Telegram bot token (from @BotFather). Required to send reports "
+                "via --send-telegram."
+            ),
+        ),
+    ] = ""
+
+    telegram_chat_id: Annotated[
+        str,
+        Field(
+            default="",
+            description=(
+                "Telegram chat ID (user, group or channel @username) where the "
+                "report will be sent."
+            ),
+        ),
+    ] = ""
+
+    telegram_message_thread_id: Annotated[
+        int | None,
+        Field(
+            default=None,
+            description=(
+                "Optional Telegram supergroup topic/thread id to send the "
+                "message into. Leave empty for the general topic."
+            ),
+        ),
+    ] = None
+
     @field_validator("planka_url")
     @classmethod
     def _strip_url(cls, value: str) -> str:

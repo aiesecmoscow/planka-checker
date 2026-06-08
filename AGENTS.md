@@ -5,7 +5,7 @@
 MCP server + CLI + library for Planka board activity reports.
 - **Library API**: `from planka_checker import PlankaSettings, PlankaReportGenerator, PlankaReport`
 - **MCP server**: `planka-checker-mcp` (stdio) — 6 tools: `get_daily_report`, `get_weekly_report`, `get_overdue_cards`, `get_burning_cards`, `get_forgotten_cards`, `get_full_report`
-- **CLI**: `planka-checker {daily,weekly,overdue,burning,forgotten} [--pretty|--summarize]`
+- **CLI**: `planka-checker {daily,weekly,overdue,burning,forgotten} [--pretty|--summarize|--send-telegram]`
 
 ## Running the MCP server with `uvx` (for AI agents / MCP clients)
 
@@ -156,6 +156,7 @@ src/planka_checker/
 ├── models.py          # Pydantic report models (public API surface)
 ├── reports.py         # PlankaReportGenerator — async, builds CardSummary/ActionSummary
 ├── server.py          # FastMCP server, one @mcp.tool() per query (async)
+├── telegram.py        # aiogram-based sender + HTML formatter for --send-telegram
 └── main.py            # argparse CLI; wraps the async generator with asyncio.run
 main.py                # top-level shim that calls planka_checker.main:run
 tests/test_reports.py  # 6 async tests using AsyncMock — no network
@@ -273,6 +274,9 @@ PLANKA_BOARD_URLS="https://.../boards/ID1,https://.../boards/ID2" \
   or bare board IDs. `settings.board_ids` extracts the numeric IDs.
 - `BURNING_HOURS` (default 48) — due-within window
 - `FORGOTTEN_DAYS` (default 7) — overdue + no-activity threshold
+- `TELEGRAM_BOT_TOKEN` (default `""`) — bot token from @BotFather, required for `--send-telegram`
+- `TELEGRAM_CHAT_ID` (default `""`) — chat id (`-100…` for groups/channels) or `@username` for public channels
+- `TELEGRAM_MESSAGE_THREAD_ID` (default `None`) — optional supergroup topic id
 
 `planka_board_urls` uses `pydantic_settings.NoDecode` so the comma-separated
 string isn't JSON-decoded. If you change the field type, preserve that

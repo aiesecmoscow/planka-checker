@@ -39,6 +39,15 @@ def _build_parser() -> argparse.ArgumentParser:
             action="store_true",
             help="Print a short human-readable summary instead of raw JSON",
         )
+        p.add_argument(
+            "--send-telegram",
+            action="store_true",
+            help=(
+                "Send the generated report to Telegram using "
+                "TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID from env / .env. "
+                "Useful for docker cron / scheduled jobs."
+            ),
+        )
 
     return parser
 
@@ -108,21 +117,29 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "daily":
         data = asyncio.run(generator.generate_report(period="day"))
-        _print(data, args.pretty, args.summarize, "Daily")
+        kind = "Daily"
     elif args.command == "weekly":
         data = asyncio.run(generator.generate_report(period="week"))
-        _print(data, args.pretty, args.summarize, "Weekly")
+        kind = "Weekly"
     elif args.command == "overdue":
         data = asyncio.run(generator.get_overdue_cards())
-        _print(data, args.pretty, args.summarize, "Overdue")
+        kind = "Overdue"
     elif args.command == "burning":
         data = asyncio.run(generator.get_burning_cards())
-        _print(data, args.pretty, args.summarize, "Burning")
+        kind = "Burning"
     elif args.command == "forgotten":
         data = asyncio.run(generator.get_forgotten_cards())
-        _print(data, args.pretty, args.summarize, "Forgotten")
+        kind = "Forgotten"
     else:
         parser.error(f"Unknown command: {args.command}")
+        return 2
+
+    _print(data, args.pretty, args.summarize, kind)
+
+    if args.send_telegram:
+        from planka_checker.telegram import send_telegram_sync
+
+        send_telegram_sync(settings, data, kind)
     return 0
 
 

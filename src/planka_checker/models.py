@@ -41,6 +41,9 @@ class CardSummary(BaseModel):
     url: str = Field(description="Direct link to card in Planka")
     board_id: int
     board_name: str
+    board_url: str = Field(
+        default="", description="Direct link to the board that contains the card"
+    )
     list_id: int
     list_name: str
     due_date: datetime | None = None
@@ -77,6 +80,9 @@ class ActionSummary(BaseModel):
     user_name: str
     board_id: int
     board_name: str
+    board_url: str = Field(
+        default="", description="Direct link to the board where the action occurred"
+    )
     created_at: datetime
     extra_data: dict = Field(default_factory=dict)
     has_comment_text: bool = Field(
